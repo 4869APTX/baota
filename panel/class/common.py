@@ -53,6 +53,14 @@ class panelSetup:
         dirPath = '/www/server/phpmyadmin/pma'
         if os.path.exists(dirPath):
             public.ExecShell("rm -rf {}".format(dirPath))
+        
+        dirPath = '/www/server/adminer'
+        if os.path.exists(dirPath):
+            public.ExecShell("rm -rf {}".format(dirPath))
+        
+        dirPath = '/www/server/panel/adminer'
+        if os.path.exists(dirPath):
+            public.ExecShell("rm -rf {}".format(dirPath))
         return None
 
 

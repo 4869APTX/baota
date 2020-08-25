@@ -61,7 +61,16 @@ class panelPHP:
         self.__clean_args_file()
         data = {}
         data['GET'] = request.args.to_dict()
-        data['POST'] = request.form.to_dict()
+        data['POST'] = {}
+        x_token = request.headers.get('x-http-token')
+        if x_token:
+            aes_pwd = x_token[:8] + x_token[40:48]
+        for key in request.form.keys():
+            data['POST'][key] = str(request.form.get(key,''))
+            if x_token:
+                if len(data['POST'][key]) > 5:
+                    if data['POST'][key][:6] == 'BT-CRT':
+                        data['POST'][key] = public.aes_decrypt(data['POST'][key][6:],aes_pwd)
         data['POST']['client_ip'] = public.GetClientIp()
         data = json.dumps(data)
         public.writeFile(self.__args_tmp,data)
@@ -253,151 +262,151 @@ class panelPHP:
         except:
             return 3306
 
-    def write_pma_passwd(self,username,password):
-        '''
-            @name 写入mysql帐号密码到配置文件
-            @author hwliang<2020-07-13>
-            @param username string(用户名)
-            @param password string(密码)
-            @return bool
-        '''
+#     def write_pma_passwd(self,username,password):
+#         '''
+#             @name 写入mysql帐号密码到配置文件
+#             @author hwliang<2020-07-13>
+#             @param username string(用户名)
+#             @param password string(密码)
+#             @return bool
+#         '''
 
-        self.check_phpmyadmin_phpversion()
-        pconfig = 'cookie'
-        if username:
-            pconfig = 'config'
-        pma_path = '/www/server/phpmyadmin/'
-        pma_config_file = os.path.join(pma_path,'pma/config.inc.php')
-        conf = public.readFile(pma_config_file)
-        if not conf: return False
-        rep = r"/\* Authentication type \*/(.|\n)+/\* Server parameters \*/"
-        rstr = '''/* Authentication type */
-$cfg['Servers'][$i]['auth_type'] = '{}';
-$cfg['Servers'][$i]['host'] = 'localhost'; 
-$cfg['Servers'][$i]['port'] = '{}';
-$cfg['Servers'][$i]['user'] = '{}'; 
-$cfg['Servers'][$i]['password'] = '{}'; 
-/* Server parameters */'''.format(pconfig,self.get_mysql_port(),username,password)
-        conf = re.sub(rep,rstr,conf)
-        public.writeFile(pma_config_file,conf)
-        return True
+#         self.check_phpmyadmin_phpversion()
+#         pconfig = 'cookie'
+#         if username:
+#             pconfig = 'config'
+#         pma_path = '/www/server/phpmyadmin/'
+#         pma_config_file = os.path.join(pma_path,'pma/config.inc.php')
+#         conf = public.readFile(pma_config_file)
+#         if not conf: return False
+#         rep = r"/\* Authentication type \*/(.|\n)+/\* Server parameters \*/"
+#         rstr = '''/* Authentication type */
+# $cfg['Servers'][$i]['auth_type'] = '{}';
+# $cfg['Servers'][$i]['host'] = 'localhost'; 
+# $cfg['Servers'][$i]['port'] = '{}';
+# $cfg['Servers'][$i]['user'] = '{}'; 
+# $cfg['Servers'][$i]['password'] = '{}'; 
+# /* Server parameters */'''.format(pconfig,self.get_mysql_port(),username,password)
+#         conf = re.sub(rep,rstr,conf)
+#         public.writeFile(pma_config_file,conf)
+#         return True
 
-    def request_php(self,uri):
-        '''
-            @name 发起fastcgi请求到PHP-FPM
-            @author hwliang<2020-07-11>
-            @param puri string(URI地址)
-            @return socket
-        '''
-        php_unix_socket = '/tmp/php-cgi-{}.sock'.format(self.php_version)
-        f = FPM(php_unix_socket,self.document_root,self.last_path)
+#     def request_php(self,uri):
+#         '''
+#             @name 发起fastcgi请求到PHP-FPM
+#             @author hwliang<2020-07-11>
+#             @param puri string(URI地址)
+#             @return socket
+#         '''
+#         php_unix_socket = '/tmp/php-cgi-{}.sock'.format(self.php_version)
+#         f = FPM(php_unix_socket,self.document_root,self.last_path)
 
-        if request.full_path.find('?') != -1:
-            uri = request.full_path[request.full_path.find(uri):]
-        if self.re_io:
-            sock = f.load_url(uri,content=self.re_io)
-        else:
-            sock = f.load_url(uri,content=request.stream)
-        return sock
+#         if request.full_path.find('?') != -1:
+#             uri = request.full_path[request.full_path.find(uri):]
+#         if self.re_io:
+#             sock = f.load_url(uri,content=self.re_io)
+#         else:
+#             sock = f.load_url(uri,content=request.stream)
+#         return sock
 
-    def start(self,puri,document_root,last_path = ''):
-        '''
-            @name 开始处理PHP请求
-            @author hwliang<2020-07-11>
-            @param puri string(URI地址)
-            @return socket or Response
-        '''
-        if puri in ['/','',None]: puri = 'index.php'
-        if puri[0] == '/': puri = puri[1:]
-        self.document_root = document_root
-        self.last_path = last_path
-        filename = document_root + puri
+    # def start(self,puri,document_root,last_path = ''):
+    #     '''
+    #         @name 开始处理PHP请求
+    #         @author hwliang<2020-07-11>
+    #         @param puri string(URI地址)
+    #         @return socket or Response
+    #     '''
+    #     if puri in ['/','',None]: puri = 'index.php'
+    #     if puri[0] == '/': puri = puri[1:]
+    #     self.document_root = document_root
+    #     self.last_path = last_path
+    #     filename = document_root + puri
         
 
-        #如果是PHP文件
-        if puri[-4:] == '.php':
-            if  request.path.find('/phpmyadmin/') != -1:
-                ikey = 'pma_php_version'
-                self.php_version = cache.get(ikey)
-                if not self.php_version:
-                    php_version = self.get_phpmyadmin_phpversion()
-                    php_versions = self.check_phpmyadmin_phpversion()
-                    if not php_versions:
-                        if php_versions == False:
-                            return Resp('因安全问题，已停止对phpMyAdmin4.6的支持，到软件商店卸载并安装其它安全版本!')
-                        else:
-                            return Resp('未安装phpmyadmin')
-                    if not php_version or not php_version in php_versions:
-                        php_version = php_versions
-                    self.php_version = self.get_php_version(php_version)
-                    if not self.php_version:
-                        php_version = self.check_phpmyadmin_phpversion()
-                        self.php_version = self.get_php_version(php_version)
-                        if not php_version:
-                            return Resp('没有找到支持的PHP版本: {}'.format(php_versions))
+    #     #如果是PHP文件
+    #     if puri[-4:] == '.php':
+    #         if  request.path.find('/phpmyadmin/') != -1:
+    #             ikey = 'pma_php_version'
+    #             self.php_version = cache.get(ikey)
+    #             if not self.php_version:
+    #                 php_version = self.get_phpmyadmin_phpversion()
+    #                 php_versions = self.check_phpmyadmin_phpversion()
+    #                 if not php_versions:
+    #                     if php_versions == False:
+    #                         return Resp('因安全问题，已停止对phpMyAdmin4.6的支持，到软件商店卸载并安装其它安全版本!')
+    #                     else:
+    #                         return Resp('未安装phpmyadmin')
+    #                 if not php_version or not php_version in php_versions:
+    #                     php_version = php_versions
+    #                 self.php_version = self.get_php_version(php_version)
+    #                 if not self.php_version:
+    #                     php_version = self.check_phpmyadmin_phpversion()
+    #                     self.php_version = self.get_php_version(php_version)
+    #                     if not php_version:
+    #                         return Resp('没有找到支持的PHP版本: {}'.format(php_versions))
 
-                    if not self.php_version in php_versions:
-                        self.php_version = self.get_php_version(php_versions)
+    #                 if not self.php_version in php_versions:
+    #                     self.php_version = self.get_php_version(php_versions)
                     
-                        if not self.php_version:
-                                return Resp('没有找到支持的PHP版本: {}'.format(php_versions))
-                    cache.set(ikey,self.php_version,1)
+    #                     if not self.php_version:
+    #                             return Resp('没有找到支持的PHP版本: {}'.format(php_versions))
+    #                 cache.set(ikey,self.php_version,1)
 
-                if request.method == 'POST':
-                    #登录phpmyadmin
-                    if puri in ['index.php','/index.php']:
-                        content = public.url_encode(request.form.to_dict())
-                        if not isinstance(content,bytes):
-                            content = content.encode()
-                        self.re_io = StringIO(content)
-                        username = request.form.get('pma_username')
-                        if username:
-                            password = request.form.get('pma_password')
-                            if not self.write_pma_passwd(username,password):
-                                return Resp('未安装phpmyadmin')
+    #             if request.method == 'POST':
+    #                 #登录phpmyadmin
+    #                 if puri in ['index.php','/index.php']:
+    #                     content = public.url_encode(request.form.to_dict())
+    #                     if not isinstance(content,bytes):
+    #                         content = content.encode()
+    #                     self.re_io = StringIO(content)
+    #                     username = request.form.get('pma_username')
+    #                     if username:
+    #                         password = request.form.get('pma_password')
+    #                         if not self.write_pma_passwd(username,password):
+    #                             return Resp('未安装phpmyadmin')
 
-                if puri in ['logout.php','/logout.php']:
-                    self.write_pma_passwd(None,None)
-            else:
-                src_path = '/www/server/panel/adminer'
-                dst_path = '/www/server/adminer'
-                if os.path.exists(src_path):
-                    if not os.path.exists(dst_path): os.makedirs(dst_path)
-                    public.ExecShell("\cp -arf {}/* {}/".format(src_path,dst_path))
-                    public.ExecShell("chown -R www:www {}".format(dst_path))
-                    public.ExecShell("chmod -R 700 {}".format(dst_path))
-                    public.ExecShell("rm -rf {}".format(src_path))
+    #             if puri in ['logout.php','/logout.php']:
+    #                 self.write_pma_passwd(None,None)
+    #         else:
+    #             src_path = '/www/server/panel/adminer'
+    #             dst_path = '/www/server/adminer'
+    #             if os.path.exists(src_path):
+    #                 if not os.path.exists(dst_path): os.makedirs(dst_path)
+    #                 public.ExecShell("\cp -arf {}/* {}/".format(src_path,dst_path))
+    #                 public.ExecShell("chown -R www:www {}".format(dst_path))
+    #                 public.ExecShell("chmod -R 700 {}".format(dst_path))
+    #                 public.ExecShell("rm -rf {}".format(src_path))
 
-                if not os.path.exists(dst_path + '/index.php'):
-                    return Resp("adminer文件缺失，请在首页[修复]面板后重试!")
+    #             if not os.path.exists(dst_path + '/index.php'):
+    #                 return Resp("adminer文件缺失，请在首页[修复]面板后重试!")
 
-                ikey = 'aer_php_version'
-                self.php_version = cache.get(ikey)
-                if not self.php_version:
-                    self.php_version = self.get_php_version(None)
-                    cache.set(ikey,self.php_version,10)
-                    if not self.php_version:
-                        return Resp('没有找到可用的PHP版本')
+    #             ikey = 'aer_php_version'
+    #             self.php_version = cache.get(ikey)
+    #             if not self.php_version:
+    #                 self.php_version = self.get_php_version(None)
+    #                 cache.set(ikey,self.php_version,10)
+    #                 if not self.php_version:
+    #                     return Resp('没有找到可用的PHP版本')
                     
 
-            #文件是否存在？
-            if not os.path.exists(filename):
-               return abort(404)
+    #         #文件是否存在？
+    #         if not os.path.exists(filename):
+    #            return abort(404)
             
-            #发送到FPM
-            try:
+    #         #发送到FPM
+    #         try:
                 
-                return self.request_php(puri)
-            except Exception as ex:
-                if str(ex).find('No such file or directory') != -1:
-                    return Resp('指定PHP版本: {}，未启动，或无法连接!'.format(self.php_version))
-                return Resp(str(ex))
+    #             return self.request_php(puri)
+    #         except Exception as ex:
+    #             if str(ex).find('No such file or directory') != -1:
+    #                 return Resp('指定PHP版本: {}，未启动，或无法连接!'.format(self.php_version))
+    #             return Resp(str(ex))
 
-        if not os.path.exists(filename):
-            return abort(404)
+    #     if not os.path.exists(filename):
+    #         return abort(404)
         
-        #如果是静态文件
-        return send_file(filename)
+    #     #如果是静态文件
+    #     return send_file(filename)
 
     
 
