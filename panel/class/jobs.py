@@ -113,8 +113,6 @@ def control_init():
         os.makedirs(stop_path)
     public.ExecShell("chown -R root:root {path};chmod -R 755 {path}".format(path=stop_path))
     public.ExecShell('chmod 755 /www;chmod 755 /www/server')
-    public.ExecShell("rm -rf /www/server/phpmyadmin/pma")
-    public.ExecShell("rm -rf /www/server/adminer")
     #disable_putenv('putenv')
     clean_session()
     #set_crond()
